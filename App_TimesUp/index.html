@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="de">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Times Up – Mobile App</title>
+    <link rel="stylesheet" href="css/startscreen.css" />
+    <link rel="manifest" href="manifest.json" />
+    <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('service-worker.js')
+                .then(() => console.log('Service Worker registriert'))
+                .catch(err => console.error('SW Fehler:', err));
+        }
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+</head>
+
+<body>
+
+    <!-- === Startbildschirm === -->
+    <div id="screen-start" class="screen active">
+        <h2>TimesUp by He1nzHarald</h2>
+        <input type="text" id="playerInput" placeholder="Spielername eingeben" />
+        <button onclick="addPlayer()">➕ Spieler hinzufügen</button>
+
+        <table id="playerTable">
+            <thead>
+                <tr>
+                    <th>Spielername</th>
+                    <th>Handicap</th>
+                    <th>Entfernen</th>
+                </tr>
+            </thead>
+            <tbody id="playerTableBody"></tbody>
+        </table>
+
+        <hr class="divider" />
+
+        <button onclick="showScreen('settings')">⚙️ Einstellungen</button>
+        <button onclick="confirmBeforeContinue()">➡️ Weiter</button>
+        <button id="loadSavesButton" class="secondary">🕑 Alte Spielstände</button>
+
+        <p id="kartenStatusText" style="text-align:center; color: #666; font-size: 0.95em; margin-top: 20px;">
+            Karten werden geladen...
+        </p>
+
+    </div>
+
+
+    <!-- === Einstellungen === -->
+    <div id="screen-settings" class="screen">
+        <h2>Einstellungen</h2>
+        <div class="tab-btns">
+            <button onclick="showTab('rules')">📋 Spielregeln</button>
+            <button onclick="validateSettingsAndGoBack()">⬅️ Zurück</button>
+            <button onclick="resetAllSettings()">🗑️ Zurücksetzen auf Standardwerte</button>
+        </div>
+
+        <!-- Spielregeln -->
+        <div id="tab-rules">
+            <label for="cardCount">Anzahl Karten (Default: 40)</label>
+            <input type="number" id="cardCount" min="1" value="40" />
+            <hr style="margin: 20px 0; border: none; border-top: 1px solid #ccc;" />
+
+
+            <label for="roundCount">Anzahl Spielrunden (Default: 3)</label>
+            <input type="number" id="roundCount" min="1" max="10" value="3" onchange="renderRoundSettings()" />
+            <hr style="margin: 20px 0; border: none; border-top: 1px solid #ccc;" />
+
+
+            <label for="handicapEnabled">Handicap</label>
+            <select id="handicapEnabled" onchange="toggleHandicapInput()">
+                <option value="no" selected>Nein</option>
+                <option value="yes">Ja</option>
+            </select>
+
+            <div id="handicapTimeContainer" class="hidden">
+                <label for="handicapTime">Zusätzliche Zeit (Sekunden)</label>
+                <input type="number" id="handicapTime" min="1" value="5" />
+            </div>
+            <hr style="margin: 20px 0; border: none; border-top: 1px solid #ccc;" />
+
+            <label for="punishEnabled">Regelmissachtung bestrafen</label>
+            <select id="punishEnabled" onchange="togglePunishOptions()">
+                <option value="no" selected>Nein</option>
+                <option value="yes">Ja</option>
+            </select>
+
+            <div id="punishOptionsContainer" class="hidden">
+                <label for="punishTime">Strafzeit (Sekunden)</label>
+                <input type="number" id="punishTime" min="1" value="3" />
+
+                <label for="punishPoints">Punktabzug</label>
+                <select id="punishPoints">
+                    <option value="no" selected>Nein</option>
+                    <option value="yes">Ja</option>
+                    <option value="draw">Bei Gleichstand</option>
+                </select>
+            </div>
+            <hr class="divider" />
+
+            <label for="vetoCount">Anzahl Karten Veto</label>
+            <input type="number" id="vetoCount" min="0" value="1" />
+
+            <hr style="margin: 20px 0; border: none; border-top: 1px solid #ccc;" />
+
+            <div id="roundSettingsContainer"></div>
+        </div>
+    </div>
+
+
+
+    <!-- === Bildschirm: Teamauswahl === -->
+    <div id="screen-teamauswahl" class="screen">
+        <h2>Teamauswahl</h2>
+
+        <table id="teamPlayerTable">
+            <thead>
+                <tr>
+                    <th>Spielername</th>
+                    <th>Handicap</th>
+                </tr>
+            </thead>
+            <tbody id="teamPlayerTableBody"></tbody>
+        </table>
+
+        <hr class="divider" />
+
+        <button onclick="assignRandomTeams()">🎲 Zufällige Teams</button>
+        <button onclick="assignTeamsManually()">✍️ Manuelle Zuteilung</button>
+        <button onclick="showScreen('start')">⬅️ Zurück</button>
+    </div>
+
+
+
+    <!-- === Bildschirm: Teamübersicht === -->
+    <div id="screen-teamuebersicht" class="screen">
+        <h2>Teamübersicht</h2>
+
+        <div class="teams">
+            <div class="team team-a">
+                <h3>🔴 Team A</h3>
+                <ul id="teamAList"></ul>
+            </div>
+            <div class="team team-b">
+                <h3>🟢 Team B</h3>
+                <ul id="teamBList"></ul>
+            </div>
+        </div>
+
+        <hr class="divider" />
+
+        <button onclick="startCardSelectionWithoutVeto()">🃏 Kartenauswahl ohne Veto</button>
+        <button onclick="startCardSelection(true)">🃏 Kartenauswahl mit Veto</button>
+
+        <button onclick="showScreen('teamauswahl')">⬅️ Zurück</button>
+    </div>
+
+
+    <!-- === Bildschirm: Kartenauswahl === -->
+    <div id="screen-kartenauswahl" class="screen">
+
+        <!-- Klickbereich für Kartenzug -->
+        <div id="cardSelectionClickArea" onclick="handleCardSelectionClick()"
+            style="display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 60vh; cursor: pointer;">
+
+            <h2 id="cardSelectionPlayerName" style="font-size: 2rem; margin-bottom: 20px;"></h2>
+
+            <p id="cardSelectionInfo" style="font-size: 1.2rem; color: #444;">
+                Bitte klicken, um die Kartenauswahl zu starten!
+            </p>
+
+            <p id="vetoInfoText" style="font-size: 1rem; color: #555; margin-top: 10px;"></p>
+
+            <ul id="cardSelectionList" style="list-style: none; padding: 0; margin-top: 20px;"></ul>
+        </div>
+
+        <!-- Steuerbuttons außerhalb des Klickbereichs -->
+        <div style="display: flex; flex-direction: column; align-items: center; margin-top: 20px; gap: 10px;">
+            <button id="cardDoneButton" onclick="handleCardSelectionDone()" style="display: none;">
+                ✅ Fertig
+            </button>
+
+            <button id="startGameOverviewButton" onclick="prepareGameOverview()" style="display: none;">
+                🚀 Spiel starten
+            </button>
+
+            <button onclick="showScreen('teamuebersicht')">⬅️ Zurück</button>
+        </div>
+    </div>
+
+
+
+    <!-- === Bildschirm: Spielübersicht === -->
+    <div id="screen-spieluebersicht" class="screen">
+
+        <h2 style="text-align: center; font-size: 2rem; margin-bottom: 1rem;">📋 Spielübersicht</h2>
+
+        <!-- Rundenübersicht -->
+        <section>
+            <h3>🎯 Rundenübersicht</h3>
+            <p id="roundSummary">Es werden X Runden gespielt. Bisher 0 abgeschlossen.</p>
+        </section>
+
+        <hr class="divider" />
+
+        <!-- Allgemeine Regeln -->
+        <section>
+            <h3>📋 Allgemeine Regeln</h3>
+            <ul id="generalRulesList" style="list-style: none; padding-left: 0;"></ul>
+        </section>
+
+        <hr class="divider" />
+
+        <!-- Regeln je Runde -->
+        <section>
+            <h3>🎯 Regeln je Runde</h3>
+            <div id="overviewRoundSettings" style="display: flex; flex-direction: column; gap: 1rem;"></div>
+        </section>
+
+        <hr class="divider" />
+
+        <!-- Teamübersicht -->
+        <section>
+            <div class="teams">
+                <div class="team team-a">
+                    <h4 id="teamATitle">🔴 Team A – 0 Punkte</h4>
+                    <ul id="overviewTeamA"></ul>
+                </div>
+                <div class="team team-b">
+                    <h4 id="teamBTitle">🟢 Team B – 0 Punkte</h4>
+                    <ul id="overviewTeamB"></ul>
+                </div>
+            </div>
+        </section>
+
+        <hr class="divider" />
+
+        <!-- Buttons -->
+        <div style="margin-top: 20px;">
+            <button onclick="startGame()">🚀 Spiel starten</button>
+            <button onclick="showScreen('kartenauswahl')">⬅️ Zurück</button>
+        </div>
+    </div>
+
+    <!-- === Bildschirm: Aktiver Spieler === -->
+    <div id="screen-roundstart" class="screen" style="text-align: center;">
+        <h2 id="roundPlayerName" style="font-size: 2rem;"></h2>
+        <p id="roundPlayerTeam" style="font-size: 1.2rem; margin-bottom: 1rem;"></p>
+        <p style="font-size: 1rem; color: #535353;">👆 Auf den Bildschirm klicken, um die Runde zu starten!</p>
+
+        <div onclick="confirmStartRound()"
+            style="margin-top: 2rem; padding: 2rem; background: #777777; border-radius: 20px; cursor: pointer;">
+            <strong>Tippen, um zu starten</strong>
+        </div>
+    </div>
+
+
+    <!-- === Spielbildschirm === -->
+    <div id="screen-play" class="screen"
+        style="position: fixed; top: 0; left: 0; width: 100%; height: 100vh; padding: 1rem; box-sizing: border-box; background: white; overflow: hidden;">
+
+        <!-- Top-Leiste -->
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div id="timerDisplay" style="font-size: 1.6rem; font-weight: bold; color: #333;">60s</div>
+
+            <div style="flex-grow: 1; text-align: center; font-size: 0.85rem; color: #777; font-style: italic;">
+                <span id="playRoundPlayer">Spielername</span> – <span id="playRoundTeam">Team A</span>
+            </div>
+
+            <div style="font-size: 1.6rem; cursor: pointer;" onclick="pauseGame()" title="Pausieren">⏸️</div>
+        </div>
+
+        <!-- Begriffsbereich -->
+<div style="display: flex; justify-content: center; align-items: center; margin-top: 3rem; margin-bottom: 2rem;">
+    <div id="currentCardDisplay"
+         onclick="toggleExplanation()"
+         style="cursor: pointer; padding: 1.5rem; background: #fefefe; border-radius: 20px; width: 90%; max-width: 500px; text-align: center; box-shadow: 0 6px 18px rgba(0,0,0,0.15); border: 3px solid #888; font-weight: 600; font-size: 2.4rem; line-height: 1.4;">
+      
+      <div id="cardTerm">Begriff erscheint hier</div>
+      <div id="cardExplanation" style="display: none; font-size: 1rem; color: #666; margin-top: 1rem;"></div>
+  
+    </div>
+  </div>
+  
+
+
+
+        <!-- Buttons unten -->
+        <div style="
+position: absolute;
+bottom: 0;
+left: 0;
+width: 100%;
+display: flex;
+justify-content: space-between;
+padding: 1rem 1rem 1.2rem 1rem;
+box-sizing: border-box;
+background: white;
+box-shadow: 0 -2px 8px rgba(0,0,0,0.05);
+gap: 10px;">
+
+            <button id="btnMistake" onclick="handleMistake()"
+                style="flex: 1; background: #e74c3c; color: white; height: 60px; border: none; border-radius: 12px; font-size: 1.2rem;">
+                ❌ Fehler
+            </button>
+
+            <button id="btnSkip" onclick="handleSkip()"
+                style="flex: 1; background: #f39c12; color: white; height: 60px; border: none; border-radius: 12px; font-size: 1.2rem;">
+                🔁 Überspringen
+            </button>
+
+            <button id="btnCorrect" onclick="handleCorrect()"
+                style="flex: 1; background: #27ae60; color: white; height: 60px; border: none; border-radius: 12px; font-size: 1.2rem;">
+                ✅ Richtig
+            </button>
+        </div>
+
+    </div>
+
+
+<!-- === Statistik nach Runde === -->
+<div id="screen-roundstats" class="screen" style="padding: 1rem;">
+    <h2 style="text-align: center;">📊 Rundenstatistik</h2>
+  
+    <p style="text-align: center;">Runde <span id="statsRoundNumber">1</span> abgeschlossen</p>
+  
+    <div style="display: flex; gap: 2rem; justify-content: center; margin: 2rem 0;">
+      <div style="text-align: center;">
+        <h3 style="color: red;">🔴 Team A</h3>
+        <p style="font-size: 2rem;"><strong id="pointsTeamA">0</strong> Punkte</p>
+      </div>
+  
+      <div style="text-align: center;">
+        <h3 style="color: green;">🟢 Team B</h3>
+        <p style="font-size: 2rem;"><strong id="pointsTeamB">0</strong> Punkte</p>
+      </div>
+    </div>
+  
+    <div style="text-align: center;">
+      <button onclick="nextGameRound()">▶️ Nächste Runde starten</button>
+    </div>
+  </div>
+  
+  
+<!-- === Endergebnis Bildschirm === -->
+<div id="screen-end" class="screen" style="padding: 1rem;">
+    <h2 style="text-align: center;">🏁 Spiel beendet</h2>
+
+    <div style="display: flex; justify-content: center; gap: 2rem; flex-wrap: wrap; margin-top: 2rem;">
+      <!-- Team A -->
+      <div style="border: 2px solid red; border-radius: 12px; padding: 1rem; width: 300px;">
+        <h3 style="color: red; text-align: center;">🔴 Team A</h3>
+        <p style="text-align: center;"><strong>Gesamtpunkte:</strong> <span id="finalPointsA">0</span></p>
+        <table style="width: 100%; border-collapse: collapse; margin-top: 0.5rem;">
+          <thead style="background: #ffe6e6;">
+            <tr>
+              <th style="text-align: left; padding: 8px;">Spielername</th>
+              <th style="text-align: center;">Handicap</th>
+            </tr>
+          </thead>
+          <tbody id="finalTeamA"></tbody>
+        </table>
+      </div>
+  
+      <!-- Team B -->
+      <div style="border: 2px solid green; border-radius: 12px; padding: 1rem; width: 300px;">
+        <h3 style="color: green; text-align: center;">🟢 Team B</h3>
+        <p style="text-align: center;"><strong>Gesamtpunkte:</strong> <span id="finalPointsB">0</span></p>
+        <table style="width: 100%; border-collapse: collapse; margin-top: 0.5rem;">
+          <thead style="background: #e6ffe6;">
+            <tr>
+              <th style="text-align: left; padding: 8px;">Spielername</th>
+              <th style="text-align: center;">Handicap</th>
+            </tr>
+          </thead>
+          <tbody id="finalTeamB"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <hr class="divider" />
+  
+    <div style="text-align: center; margin-top: 2rem;">
+      <button onclick="showScreen('start')">🔁 Zurück zum Start</button>
+    </div>
+  </div>
+  
+
+
+
+
+
+
+
+    <audio id="alarm-sound" src="assets/Alarm.m4a" preload="auto"></audio>
+
+    <script src="js/app.js"></script>
+</body>
+
+</html>
